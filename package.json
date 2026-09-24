@@ -1,0 +1,20 @@
+{
+  "name": "caproxy-proxy-benchmark",
+  "version": "1.0.0",
+  "description": "The proxy benchmark caproxy.com runs for its provider reviews: success rate, two latencies, speed, Amazon/Reddit access, anonymity, FireHOL blocklists, IP pool diversity.",
+  "type": "module",
+  "license": "MIT",
+  "bin": { "caproxy-proxy-benchmark": "dist/cli.js" },
+  "main": "dist/core.js",
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "bench": "node dist/cli.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": { "playwright": "1.62.1" },
+  "devDependencies": { "typescript": "^5.7.2", "@types/node": "^22.10.2" },
+  "repository": { "type": "git", "url": "https://github.com/caproxy-com/proxy-benchmark.git" },
+  "homepage": "https://caproxy.com/en/methodology/",
+  "keywords": ["proxy", "proxy-test", "proxy-benchmark", "residential-proxy", "playwright"]
+}
