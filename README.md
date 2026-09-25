@@ -17,7 +17,7 @@ Every number on a review page comes with the raw data of its run (CSV, link unde
 | **abuse blocklists** | exit IPs matched against [FireHOL](https://iplists.firehol.org/) level 1–3. |
 | **IP pool diversity** | distinct /24 subnets and distinct networks (ASN) per run. |
 | **anonymity** | over plain HTTP via httpbin.org: `transparent` if our own IP leaks, `anonymous` if headers such as `Via` or `X-Forwarded-For` reveal a proxy, `elite` otherwise. |
-| **Amazon** | 8 visits in headless Chromium (images off). A CAPTCHA or bot wall counts as blocked; a page that did not load is not counted either way; fewer than 3 judged visits → not scored. A control visit without a proxy runs alongside; if **nobody** gets in (neither the control nor any proxy), Amazon is not scored, because a broken test can't be told apart from a block. *(caproxy.com additionally accepts the result if our browser was let in during the last 48 hours — that check needs our history and is passed in as `amazonAdmittedRecently`.)* |
+| **Zillow** | 8 plain requests. Zillow decides by IP reputation: it blocks our own datacenter server and lets clean residential IPs through, so the result is about the proxy, not the client. A block page counts as blocked; a page that did not load is not counted; fewer than 3 judged requests → not scored. If a site blocks every request of a run, it is scored only when there is evidence it admits proxies at all (`siteAdmittedRecently`; caproxy.com checks for any successful visit within 48 hours) — otherwise a site blocking every bot can't be told apart from a bad provider. |
 | **Reddit** | 8 plain requests; Reddit blocks bad IPs outright with “blocked by network security”. |
 | **country as promised** | with `--country XX`: share of answers that exit in that country. |
 
@@ -25,19 +25,20 @@ Every 4th request of the main run goes to ipinfo.io (exit IP, country, network);
 
 ### What is deliberately not tested
 
+- **Amazon** showed a CAPTCHA to almost every proxy IP we tried (residential, mobile and datacenter alike), so it did not tell providers apart.
+- **Walmart, Etsy, Target, Booking** block any non-browser client from any IP; **Craigslist** lets everyone in, including our datacenter server.
 - **Google** shows its `/sorry/` CAPTCHA to our headless browser even without a proxy — it detects automation, not the IP, so a Google score would say nothing about proxies.
 - **Instagram** without login serves the same page to everyone.
 - **Cloudflare** challenges any non-browser client, which again tests the client, not the proxy.
 
 ## Run it
 
-Needs Node.js 20+, `curl` on the PATH, and Playwright's Chromium.
+Needs Node.js 20+ and `curl` on the PATH.
 
 ```bash
 git clone https://github.com/caproxy-com/proxy-benchmark.git
 cd proxy-benchmark
 npm install
-npx playwright install chromium
 npm run build
 
 # rotating gateway
@@ -67,10 +68,11 @@ The methodology version is `METHOD_VERSION` in `src/core.ts` and is stored with 
 |---|---|
 | 2026-09-24 | 200 requests for rotating proxies, ipinfo every 4th request, Amazon (browser, with control) and Reddit, speed, anonymity, FireHOL |
 | 2026-09-24.2 | speed as transfer time only (curl, 2 MB); Amazon and Reddit: 8 visits, wait for logo or CAPTCHA, control up to 3 tries; open-connection latency |
+| 2026-09-25 | Amazon replaced with Zillow (plain requests, decides by IP reputation); no browser needed any more |
 
 ## Using it responsibly
 
-The test sends a handful of requests to public sites (a few per run to Amazon and Reddit, more to ipinfo.io, api.ipify.org and httpbin.org) and downloads 6 MB from caproxy.com for the speed test. Keep it at that scale and respect those sites' terms. Only test proxies you are allowed to use.
+The test sends a handful of requests to public sites (a few per run to Zillow and Reddit, more to ipinfo.io, api.ipify.org and httpbin.org) and downloads 6 MB from caproxy.com for the speed test. Keep it at that scale and respect those sites' terms. Only test proxies you are allowed to use.
 
 ## Disagree with a result?
 

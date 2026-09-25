@@ -1,4 +1,4 @@
-import { chromium, request } from 'playwright'
+import { request } from 'playwright'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { execFile } from 'node:child_process'
@@ -9,16 +9,15 @@ import type { ProxyConfig } from './proxy.js'
  * Checks on top of the main run (core.ts). The main run answers "does the proxy
  * work and whose network is it"; buyers choose proxies by more than that:
  *
- *   sites     — do Amazon and Reddit let you in. Reddit decides by IP and shows
- *               it to a plain request (403 "blocked by network security").
- *               Amazon serves an AWS WAF JS challenge (202, ~2 KB) to anything
- *               that isn't a browser, so it is opened in a headless browser
- *               without images: a good IP gets the home page, a bad one a
- *               CAPTCHA or a "continue shopping" wall. A control visit without a
- *               proxy runs alongside. Google is not tested: it shows its /sorry/
- *               CAPTCHA to our browser even without a proxy, i.e. it detects
- *               automation, not the IP. Instagram without login serves everyone
- *               the same page; Cloudflare challenges any non-browser.
+ *   sites     — do Zillow and Reddit let you in. Both decide by the IP's reputation
+ *               and answer a plain request: Zillow blocks our own datacenter server
+ *               and lets clean residential IPs through; Reddit answers 403
+ *               "blocked by network security". So the result is about the proxy,
+ *               not the client. Not tested, because they would measure our client
+ *               or nothing at all: Amazon (showed a CAPTCHA to almost every proxy IP,
+ *               so it did not tell providers apart), Google (/sorry/ even without a
+ *               proxy), Walmart, Etsy, Target, Booking (block any non-browser),
+ *               Craigslist (lets everyone in), Instagram, Cloudflare.
  *   anonymity — does the proxy add headers that reveal it or our IP (httpbin
  *               over plain HTTP: inside TLS a proxy can't see or add headers).
  *   speed     — three 2 MB downloads, transfer time only (see speed()).
@@ -43,8 +42,6 @@ export interface Extra {
   anonHeaders: string[]
   blocklisted: number
   checkedIps: number
-  /** Did the control visit to Amazon without a proxy get through. */
-  amazonControl?: boolean
   /** Which exit IPs are listed — masked, for the per-IP table. */
   listedMasked?: string[]
   /** Requests over an already open connection: conn — connection number, reused — curl did not open a new one. */
@@ -78,29 +75,10 @@ const reddit = (p: ProxyConfig) => plainSite(p, 'https://www.reddit.com/r/progra
   /blocked by network security|whoa there, pardner/i.test(body) ? 'blocked'
     : st === 429 ? 'rate limited' : st >= 400 ? `HTTP ${st}` : null)
 
-async function amazon(browser: Awaited<ReturnType<typeof chromium.launch>>, proxy: ProxyConfig | undefined): Promise<SiteTry> {
-  const ctx = await browser.newContext({ proxy, userAgent: UA, locale: 'en-US', viewport: { width: 1280, height: 800 } })
-  await ctx.route('**/*', r => ['image', 'media', 'font'].includes(r.request().resourceType()) ? r.abort() : r.continue())
-  const page = await ctx.newPage()
-  const t = Date.now()
-  try {
-    await page.goto('https://www.amazon.com/', { waitUntil: 'commit', timeout: 45_000 })
-    await page.waitForLoadState('domcontentloaded', { timeout: 45_000 }).catch(() => {})
-    // The AWS WAF check runs as a script and reloads the page. Instead of a fixed
-    // wait we wait for the logo or a CAPTCHA: through a proxy the home page loads
-    // slower, and with a fixed 4 s half of the tries ended up as "no page".
-    await page.locator('#nav-logo, #navbar, form[action*="Captcha" i], #captchacharacters').first()
-      .waitFor({ timeout: 20_000 }).catch(() => {})
-    if (await page.locator('form[action*="Captcha" i], #captchacharacters').count()) return { ok: false, why: 'captcha', ms: Date.now() - t }
-    if (await page.locator('#nav-logo, #navbar').count()) return { ok: true, why: 'ok', ms: Date.now() - t }
-    const text = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '')
-    return { ok: false, why: /continue shopping/i.test(text) ? 'bot wall' : 'no page', ms: Date.now() - t }
-  } catch (e) {
-    return { ok: false, why: errWhy(e), ms: null }
-  } finally {
-    await ctx.close().catch(() => {})
-  }
-}
+const zillow = (p: ProxyConfig) => plainSite(p, 'https://www.zillow.com/homes/for_sale/', (st, body) =>
+  /px-captcha|Access to this page has been denied|Press & Hold/i.test(body) ? 'blocked'
+    : st === 429 ? 'rate limited' : st === 403 ? 'blocked' : st >= 400 ? `HTTP ${st}`
+    : body.length < 20_000 ? 'no page' : null)
 
 async function anonymity(proxy: ProxyConfig, ourIp: string): Promise<{ level: Extra['anonymity']; headers: string[] }> {
   const REVEAL = ['via', 'x-forwarded-for', 'forwarded', 'x-real-ip', 'x-proxy-id', 'proxy-connection', 'x-forwarded-host', 'client-ip']
@@ -237,25 +215,10 @@ export async function blocklisted(ips: string[]): Promise<{ listed: number; chec
 
 export async function runExtra(list: ProxyConfig[], exits: Array<{ ip: string; org: string | null }>, ourIp: string): Promise<Extra> {
   const pick = (i: number) => list[i % list.length]
-  const sites: Record<string, SiteTry[]> = { amazon: [], reddit: [] }
-  let amazonControl = false
-  for (let i = 0; i < SITE_TRIES; i++) sites.reddit.push(await reddit(pick(i + 1)))
-  const browser = await chromium.launch()
-  try {
-    // Control: our own browser without a proxy, up to three tries. Amazon now and
-    // then shows a CAPTCHA to our server too; a single random CAPTCHA used to drop
-    // Amazon from a whole run.
-    let controlOk = false
-    for (let c = 0; c < 3 && !controlOk; c++) controlOk = (await amazon(browser, undefined)).ok
-    const tries: SiteTry[] = []
-    for (let i = 0; i < SITE_TRIES; i++) tries.push(await amazon(browser, pick(i)))
-    // Tries are always kept. Whether to score Amazon is decided by the caller:
-    // if nobody got in (neither the control nor any proxy), the test can't be told
-    // apart from a block — see scoreSites() in core.ts.
-    sites.amazon.push(...tries)
-    amazonControl = controlOk
-  } finally {
-    await browser.close().catch(() => {})
+  const sites: Record<string, SiteTry[]> = { zillow: [], reddit: [] }
+  for (let i = 0; i < SITE_TRIES; i++) {
+    sites.zillow.push(await zillow(pick(i)))
+    sites.reddit.push(await reddit(pick(i + 1)))
   }
   const speedMbps: Array<number | null> = []
   for (let i = 0; i < SPEED_TRIES; i++) speedMbps.push(await speed(pick(i)))
@@ -266,7 +229,7 @@ export async function runExtra(list: ProxyConfig[], exits: Array<{ ip: string; o
   const v4 = exits.map(x => x.ip).filter(ip => ipNum(ip) !== null)
   return {
     sites, speedMbps, anonymity: anon.level, anonHeaders: anon.headers,
-    blocklisted: bl.listed, checkedIps: bl.checked, listedMasked: bl.which, warm, amazonControl,
+    blocklisted: bl.listed, checkedIps: bl.checked, listedMasked: bl.which, warm,
     subnets24: new Set(v4.map(ip => ip.replace(/\.\d+$/, ''))).size,
     asns: new Set(exits.map(x => (x.org ?? '').split(' ')[0]).filter(a => /^AS\d+$/.test(a))).size,
   }

@@ -13,7 +13,7 @@ import { runExtra, type Extra } from './extra.js'
  */
 
 /** Methodology version. Changes whenever what or how we measure changes. */
-export const METHOD_VERSION = '2026-09-24.2'
+export const METHOD_VERSION = '2026-09-25'
 
 /** Answers with exit IP, country and network (ASN) in one request. */
 export const MEASURE_TARGET = 'https://ipinfo.io/json'
@@ -79,13 +79,13 @@ export interface TestOptions {
   /** Skip the extra checks (sites, speed, anonymity, lists, open connection). */
   skipExtra?: boolean
   /**
-   * Called when Amazon let nobody in (neither the control without a proxy nor any
-   * proxy): then a broken test can't be told apart from a block. Return true if
-   * there is independent evidence that our browser is admitted (caproxy.com
-   * checks for a successful Amazon visit in any run within 48 hours). Default:
-   * no evidence, Amazon is not scored.
+   * Called when a site blocked every try of this run. That may be the proxy — or
+   * the site starting to block any automated client, which a single run can't
+   * tell apart. Return true if the site let proxies in during recent runs
+   * (caproxy.com checks for any successful visit within 48 hours). Default: no
+   * evidence, the site is not scored.
    */
-  amazonAdmittedRecently?: () => Promise<boolean>
+  siteAdmittedRecently?: (site: string) => Promise<boolean>
 }
 
 export interface TestResult {
@@ -193,9 +193,11 @@ async function computeMetrics(r: TestResult, lines: number, opts: TestOptions): 
 
   const extra = r.extra
   if (extra) {
-    if (extra.sites.amazon?.length && !extra.amazonControl && !extra.sites.amazon.some(t => t.ok)) {
-      const admitted = opts.amazonAdmittedRecently ? await opts.amazonAdmittedRecently() : false
-      if (!admitted) extra.sites.amazon = []
+    for (const [site, tries] of Object.entries(extra.sites)) {
+      if (tries.length && !tries.some(t => t.ok)) {
+        const admitted = opts.siteAdmittedRecently ? await opts.siteAdmittedRecently(site) : false
+        if (!admitted) extra.sites[site] = []
+      }
     }
     for (const [site, tries] of Object.entries(extra.sites)) {
       // "no page" is neither a block nor a pass. Fewer than three judged tries is not a result.
