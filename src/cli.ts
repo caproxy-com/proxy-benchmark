@@ -15,18 +15,20 @@ import { METHOD_VERSION, runTest, type TestResult } from './core.js'
  *   --samples N    override the number of requests
  *   --country XX   ISO-2 country the provider promised; enables geo_match
  *   --skip-extra   only the main run (no sites, speed, anonymity, lists, open connection)
+ *   --ipv6         IPv6-only proxies: IPv6 endpoints; sites and anonymity are skipped (no IPv6 there)
  *   --csv PATH     write every request of the run as CSV (same format as caproxy.com)
  *   --json         print the full result as JSON instead of the summary
  */
 
 function args(argv: string[]) {
-  const o: { proxies: string[]; isStatic: boolean; samples?: number; country?: string; skipExtra: boolean; csv?: string; json: boolean } =
+  const o: { proxies: string[]; isStatic: boolean; samples?: number; country?: string; skipExtra: boolean; ipv6?: boolean; csv?: string; json: boolean } =
     { proxies: [], isStatic: false, skipExtra: false, json: false }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--proxy') o.proxies.push(argv[++i])
     else if (a === '--file') o.proxies.push(...readFileSync(argv[++i], 'utf8').split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith('#')))
     else if (a === '--static') o.isStatic = true
+    else if (a === '--ipv6') o.ipv6 = true
     else if (a === '--samples') o.samples = Number(argv[++i])
     else if (a === '--country') o.country = String(argv[++i]).toUpperCase()
     else if (a === '--skip-extra') o.skipExtra = true
@@ -70,7 +72,7 @@ async function main() {
   const list = o.proxies.map(parseProxy).filter((p): p is NonNullable<typeof p> => !!p)
   if (!list.length) throw new Error('give at least one --proxy or --file (see --help)')
   console.error(`caproxy proxy benchmark ${METHOD_VERSION}: ${list.length} proxy line(s), ${o.isStatic ? 'static' : 'rotating'}…`)
-  const r = await runTest(list, { isStatic: o.isStatic, samples: o.samples, countryClaim: o.country, skipExtra: o.skipExtra })
+  const r = await runTest(list, { isStatic: o.isStatic, samples: o.samples, countryClaim: o.country, skipExtra: o.skipExtra, ipv6: o.ipv6 })
   if (o.csv) { writeFileSync(o.csv, toCsv(r)); console.error(`CSV written to ${o.csv}`) }
   if (o.json) {
     const { exits: _hidden, ...rest } = r   // full exit IPs are never printed

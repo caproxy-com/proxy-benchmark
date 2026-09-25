@@ -13,7 +13,7 @@ import { runExtra, type Extra } from './extra.js'
  */
 
 /** Methodology version. Changes whenever what or how we measure changes. */
-export const METHOD_VERSION = '2026-09-25.3'
+export const METHOD_VERSION = '2026-09-25.4'
 
 /** Answers with exit IP, country and network (ASN) in one request. */
 export const MEASURE_TARGET = 'https://ipinfo.io/json'
@@ -27,6 +27,14 @@ export const MEASURE_TARGET = 'https://ipinfo.io/json'
  * don't spend any common quota.
  */
 export const FALLBACK_TARGET = 'https://api.ipify.org/?format=json'
+
+/**
+ * The same two services over IPv6. ipinfo.io and api.ipify.org have no AAAA
+ * record, so an IPv6-only proxy can't reach them at all: until 2026-09-25.4 every
+ * request of such a proxy failed and it was never measured.
+ */
+export const MEASURE_TARGET_V6 = 'https://v6.ipinfo.io/json'
+export const FALLBACK_TARGET_V6 = 'https://api64.ipify.org/?format=json'
 
 /**
  * 200 requests for rotating proxies: with 50, "49 of 50" means anywhere between
@@ -81,6 +89,14 @@ export interface TestOptions {
   /** Skip the extra checks (sites, speed, anonymity, lists, open connection). */
   skipExtra?: boolean
   /**
+   * IPv6-only proxies: IPv6 endpoints for the main run and the open connection.
+   * Zillow and httpbin have no IPv6 at all and Reddit doesn't answer over it, so
+   * sites and anonymity are not checked — a site that can't be reached would
+   * otherwise read as "blocked every time". Blocklists and /24 subnets are IPv4
+   * by nature and skip IPv6 addresses on their own.
+   */
+  ipv6?: boolean
+  /**
    * Called when a site blocked every try of this run. That may be the proxy — or
    * the site starting to block any automated client, which a single run can't
    * tell apart. Return true if the site let proxies in during recent runs
@@ -127,11 +143,11 @@ export async function runTest(list: ProxyConfig[], opts: TestOptions): Promise<T
     const ctx = await request.newContext({ proxy: list[line], timeout: 20_000 })
     const started = Date.now()
     try {
-      let res = await ctx.get(MEASURE_TARGET, { headers: { accept: 'application/json' } })
+      let res = await ctx.get(opts.ipv6 ? MEASURE_TARGET_V6 : MEASURE_TARGET, { headers: { accept: 'application/json' } })
       let ms = Date.now() - started
       if (res.status() === 429) {
         const again = Date.now()
-        res = await ctx.get(FALLBACK_TARGET, { headers: { accept: 'application/json' } })
+        res = await ctx.get(opts.ipv6 ? FALLBACK_TARGET_V6 : FALLBACK_TARGET, { headers: { accept: 'application/json' } })
         ms = Date.now() - again
       }
       if (res.status() < 400) {
@@ -172,7 +188,7 @@ export async function runTest(list: ProxyConfig[], opts: TestOptions): Promise<T
   if (!opts.skipExtra) {
     try {
       const ourIp = await fetch('https://api.ipify.org').then(r => r.text()).catch(() => '')
-      result.extra = await runExtra(list, exits, ourIp.trim())
+      result.extra = await runExtra(list, exits, ourIp.trim(), !!opts.ipv6)
     } catch (e: any) {
       console.log(`[proxytest] extra checks failed: ${String(e?.message ?? e).split('\n')[0]}`)
     }

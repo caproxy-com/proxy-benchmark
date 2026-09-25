@@ -71,6 +71,7 @@ The methodology version is `METHOD_VERSION` in `src/core.ts` and is stored with 
 | 2026-09-25 | Amazon replaced with Zillow (plain requests, decides by IP reputation); no browser needed any more |
 | 2026-09-25.2 | every request to ipinfo (was every 4th): countries and datacenter share from all exits, not ~50; latency is now ipinfo's for all requests |
 | 2026-09-25.3 | hosting list: Amazon matched by company name (`Amazon.com`, `Amazon Technologies`, `Amazon Data Services`) — the bare word also caught AMAZONET, a Brazilian home ISP |
+| 2026-09-25.4 | IPv6-only proxies (`--ipv6`): main run and open connection over v6.ipinfo.io / api64.ipify.org; Zillow, Reddit and anonymity skipped — no IPv6 there, so they would read as blocked |
 
 ## Using it responsibly
 

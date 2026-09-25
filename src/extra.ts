@@ -139,11 +139,12 @@ function speed(proxy: ProxyConfig): Promise<number | null> {
 const WARM_CONNS = 3
 const WARM_REQS = 10
 const WARM_URL = 'https://api.ipify.org/?format=json'
+const WARM_URL_V6 = 'https://api64.ipify.org/?format=json'
 
-function warmConn(proxy: ProxyConfig, conn: number): Promise<NonNullable<Extra['warm']>> {
+function warmConn(proxy: ProxyConfig, conn: number, ipv6 = false): Promise<NonNullable<Extra['warm']>> {
   const args = ['-s', '--max-time', '90', '--proxy', proxy.server.replace(/^socks5:/, 'socks5h:')]
   if (proxy.username) args.push('--proxy-user', `${proxy.username}:${proxy.password ?? ''}`)
-  for (let i = 0; i < WARM_REQS; i++) args.push('-w', '\t%{time_total}\t%{num_connects}\t%{http_code}\n', WARM_URL)
+  for (let i = 0; i < WARM_REQS; i++) args.push('-w', '\t%{time_total}\t%{num_connects}\t%{http_code}\n', ipv6 ? WARM_URL_V6 : WARM_URL)
   return new Promise(resolve => {
     execFile('curl', args, { timeout: 100_000 }, (_err, stdout) => {
       let first: string | null = null
@@ -213,18 +214,19 @@ export async function blocklisted(ips: string[]): Promise<{ listed: number; chec
   return { listed, checked, which }
 }
 
-export async function runExtra(list: ProxyConfig[], exits: Array<{ ip: string; org: string | null }>, ourIp: string): Promise<Extra> {
+export async function runExtra(list: ProxyConfig[], exits: Array<{ ip: string; org: string | null }>, ourIp: string, ipv6 = false): Promise<Extra> {
   const pick = (i: number) => list[i % list.length]
-  const sites: Record<string, SiteTry[]> = { zillow: [], reddit: [] }
-  for (let i = 0; i < SITE_TRIES; i++) {
+  // IPv6-only: the sites and httpbin can't be reached at all (see TestOptions.ipv6).
+  const sites: Record<string, SiteTry[]> = ipv6 ? {} : { zillow: [], reddit: [] }
+  for (let i = 0; i < (ipv6 ? 0 : SITE_TRIES); i++) {
     sites.zillow.push(await zillow(pick(i)))
     sites.reddit.push(await reddit(pick(i + 1)))
   }
   const speedMbps: Array<number | null> = []
   for (let i = 0; i < SPEED_TRIES; i++) speedMbps.push(await speed(pick(i)))
   const warm: NonNullable<Extra['warm']> = []
-  for (let c = 0; c < WARM_CONNS; c++) warm.push(...await warmConn(pick(c), c + 1))
-  const anon = await anonymity(pick(0), ourIp)
+  for (let c = 0; c < WARM_CONNS; c++) warm.push(...await warmConn(pick(c), c + 1, ipv6))
+  const anon = ipv6 ? { level: null, headers: [] as string[] } : await anonymity(pick(0), ourIp)
   const bl = await blocklisted(exits.map(x => x.ip))
   const v4 = exits.map(x => x.ip).filter(ip => ipNum(ip) !== null)
   return {
