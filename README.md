@@ -70,6 +70,7 @@ The methodology version is `METHOD_VERSION` in `src/core.ts` and is stored with 
 | 2026-09-24.2 | speed as transfer time only (curl, 2 MB); Amazon and Reddit: 8 visits, wait for logo or CAPTCHA, control up to 3 tries; open-connection latency |
 | 2026-09-25 | Amazon replaced with Zillow (plain requests, decides by IP reputation); no browser needed any more |
 | 2026-09-25.2 | every request to ipinfo (was every 4th): countries and datacenter share from all exits, not ~50; latency is now ipinfo's for all requests |
+| 2026-09-25.3 | hosting list: Amazon matched by company name (`Amazon.com`, `Amazon Technologies`, `Amazon Data Services`) — the bare word also caught AMAZONET, a Brazilian home ISP |
 
 ## Using it responsibly
 

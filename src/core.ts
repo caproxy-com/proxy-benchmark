@@ -13,7 +13,7 @@ import { runExtra, type Extra } from './extra.js'
  */
 
 /** Methodology version. Changes whenever what or how we measure changes. */
-export const METHOD_VERSION = '2026-09-25.2'
+export const METHOD_VERSION = '2026-09-25.3'
 
 /** Answers with exit IP, country and network (ASN) in one request. */
 export const MEASURE_TARGET = 'https://ipinfo.io/json'
@@ -40,9 +40,12 @@ export const SAMPLES_STATIC = 50
 /**
  * Hosting and cloud networks. An address from one of these on a "residential"
  * proxy is a datacenter posing as a home connection. The list is manual and
- * deliberately incomplete: the share is a lower bound, it can't overstate.
+ * deliberately incomplete: the share is a lower bound. Company names only, never
+ * a bare brand word that ISPs share: plain "amazon" matched AMAZONET, a Brazilian
+ * home ISP (AS264344), until 2026-09-25.3 — Amazon's own networks are named
+ * "Amazon.com", "Amazon Technologies" and "Amazon Data Services".
  */
-export const HOSTING = /hosting|\bcloud|data ?cent|datacenter|\bserver|\bvps\b|colocation|ovh|hetzner|digitalocean|amazon|\baws\b|microsoft|azure|google cloud|linode|akamai|vultr|choopa|contabo|leaseweb|m247|datacamp|cdn77|psychz|quadranet|hostinger|oracle|alibaba|tencent|scaleway|ionos|g-core|gcore|zenlayer|hostroyale|stark industries|servers\.com|selectel|timeweb|aeza|pq hosting/i
+export const HOSTING = /hosting|\bcloud|data ?cent|datacenter|\bserver|\bvps\b|colocation|ovh|hetzner|digitalocean|amazon\.com|amazon technologies|amazon data services|\baws\b|microsoft|azure|google cloud|linode|akamai|vultr|choopa|contabo|leaseweb|m247|datacamp|cdn77|psychz|quadranet|hostinger|oracle|alibaba|tencent|scaleway|ionos|g-core|gcore|zenlayer|hostroyale|stark industries|servers\.com|selectel|timeweb|aeza|pq hosting/i
 
 /** The last IPv4 octet and the IPv6 tail are hidden: a residential exit IP is somebody's home. */
 export function maskIp(ip: string): string {
