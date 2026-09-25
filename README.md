@@ -21,7 +21,7 @@ Every number on a review page comes with the raw data of its run (CSV, link unde
 | **Reddit** | 8 plain requests; Reddit blocks bad IPs outright with “blocked by network security”. |
 | **country as promised** | with `--country XX`: share of answers that exit in that country. |
 
-Every 4th request of the main run goes to ipinfo.io (exit IP, country, network); the rest go to api.ipify.org (IP only). That keeps us inside ipinfo's free tier; success, latency and rotation are computed from all requests, countries and networks from the ipinfo ones.
+Every request of the main run goes to ipinfo.io (exit IP, country, network). ipinfo's free limit is per client IP, i.e. per proxy exit, so a rotating pool doesn't spend a common quota; when an exit has used it up (busy shared mobile IPs), the request is repeated to api.ipify.org (IP only) and still counts. Countries and networks are computed from the ipinfo answers.
 
 ### What is deliberately not tested
 
@@ -69,6 +69,7 @@ The methodology version is `METHOD_VERSION` in `src/core.ts` and is stored with 
 | 2026-09-24 | 200 requests for rotating proxies, ipinfo every 4th request, Amazon (browser, with control) and Reddit, speed, anonymity, FireHOL |
 | 2026-09-24.2 | speed as transfer time only (curl, 2 MB); Amazon and Reddit: 8 visits, wait for logo or CAPTCHA, control up to 3 tries; open-connection latency |
 | 2026-09-25 | Amazon replaced with Zillow (plain requests, decides by IP reputation); no browser needed any more |
+| 2026-09-25.2 | every request to ipinfo (was every 4th): countries and datacenter share from all exits, not ~50; latency is now ipinfo's for all requests |
 
 ## Using it responsibly
 

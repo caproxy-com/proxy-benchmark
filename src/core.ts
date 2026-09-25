@@ -13,21 +13,20 @@ import { runExtra, type Extra } from './extra.js'
  */
 
 /** Methodology version. Changes whenever what or how we measure changes. */
-export const METHOD_VERSION = '2026-09-25'
+export const METHOD_VERSION = '2026-09-25.2'
 
 /** Answers with exit IP, country and network (ASN) in one request. */
 export const MEASURE_TARGET = 'https://ipinfo.io/json'
 
 /**
- * Only the IP. Used for 3 of every 4 requests (ipinfo's free tier is ~50k
- * requests a month) and as a fallback when ipinfo answers 429: its limit is per
- * exit IP, and on shared mobile IPs other people use it up. The proxy worked, so
- * that must not count as a failure.
+ * Only the IP. Fallback when ipinfo answers 429: its free limit is per client
+ * IP, i.e. per proxy exit IP, and on shared mobile IPs other people use it up.
+ * The proxy worked, so that must not count as a failure. Every request goes to
+ * ipinfo first: until 2026-09-25.2 only every 4th did, and the share of hosting
+ * networks was judged on ~46 exits of 200 — needlessly, since rotating exits
+ * don't spend any common quota.
  */
 export const FALLBACK_TARGET = 'https://api.ipify.org/?format=json'
-
-/** Every ENRICH_EVERY-th request goes to ipinfo for country and network. */
-export const ENRICH_EVERY = 4
 
 /**
  * 200 requests for rotating proxies: with 50, "49 of 50" means anywhere between
@@ -125,7 +124,7 @@ export async function runTest(list: ProxyConfig[], opts: TestOptions): Promise<T
     const ctx = await request.newContext({ proxy: list[line], timeout: 20_000 })
     const started = Date.now()
     try {
-      let res = await ctx.get(i % ENRICH_EVERY === 0 ? MEASURE_TARGET : FALLBACK_TARGET, { headers: { accept: 'application/json' } })
+      let res = await ctx.get(MEASURE_TARGET, { headers: { accept: 'application/json' } })
       let ms = Date.now() - started
       if (res.status() === 429) {
         const again = Date.now()

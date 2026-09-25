@@ -47,7 +47,7 @@ const esc = (v: unknown) => {
 export function toCsv(r: TestResult): string {
   const out: string[] = []
   const row = (...c: unknown[]) => out.push(c.map(esc).join(','))
-  row(`# caproxy proxy benchmark, method ${METHOD_VERSION}, ${new Date().toISOString()}; every 4th request to ipinfo.io (country and network known), the rest to api.ipify.org (IP only)`)
+  row(`# caproxy proxy benchmark, method ${METHOD_VERSION}, ${new Date().toISOString()}; every request to ipinfo.io (exit IP, country, network), api.ipify.org (IP only) when ipinfo refuses`)
   row('request', 'result', 'response_ms', 'exit_ip_masked', 'country', 'network', 'error')
   for (const x of r.log) row(x.n, x.ok ? 'ok' : 'fail', x.ms, x.ip, x.cc, x.org, x.err)
   const e = r.extra
