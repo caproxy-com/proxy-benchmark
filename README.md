@@ -31,6 +31,7 @@ Every request of the main run goes to ipinfo.io (exit IP, country, network). ipi
 - **Google** shows its `/sorry/` CAPTCHA to our headless browser even without a proxy — it detects automation, not the IP, so a Google score would say nothing about proxies.
 - **Instagram** without login serves the same page to everyone.
 - **Cloudflare** challenges any non-browser client, which again tests the client, not the proxy.
+- **IPv6-only proxies** get no Zillow, Reddit or anonymity score and no blocklist share. Zillow, Reddit and httpbin have no IPv6 address at all, so such a proxy can't reach them — that is not a block, and scoring it would read as one. The FireHOL lists are IPv4-only, so there is nothing to check an IPv6 address against. Whether a proxy exits over IPv6 only is detected by a probe before the run (`detectIpv6`).
 
 ## Run it
 
