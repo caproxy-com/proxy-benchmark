@@ -13,7 +13,7 @@ import { runExtra, type Extra } from './extra.js'
  */
 
 /** Methodology version. Changes whenever what or how we measure changes. */
-export const METHOD_VERSION = '2026-09-25.4'
+export const METHOD_VERSION = '2026-09-25.5'
 
 /** Answers with exit IP, country and network (ASN) in one request. */
 export const MEASURE_TARGET = 'https://ipinfo.io/json'
@@ -94,6 +94,8 @@ export interface TestOptions {
    * sites and anonymity are not checked — a site that can't be reached would
    * otherwise read as "blocked every time". Blocklists and /24 subnets are IPv4
    * by nature and skip IPv6 addresses on their own.
+   * Left out — detected before the run (detectIpv6), whatever the proxy type:
+   * a rotating pool can exit over IPv6 only as well.
    */
   ipv6?: boolean
   /**
@@ -118,6 +120,10 @@ export interface TestResult {
   latencyP50: number
   latencyP90: number
   uniqueIpShare: number
+  /** Share of distinct /64 networks among answers — IPv6 exits only. */
+  uniqueNet64Share: number | null
+  /** The run went over IPv6 endpoints (given or detected). */
+  ipv6: boolean
   hostingShare: number
   countries: string[]
   extra: Extra | null
@@ -125,7 +131,36 @@ export interface TestResult {
   metrics: Metric[]
 }
 
+/**
+ * Does this proxy exit over IPv6 only? One request to the IPv4-only ipify; if it
+ * fails and the IPv6 one answers with an IPv6 address, yes. Dual-stack proxies
+ * reach IPv4 services fine and are measured as usual.
+ */
+export async function detectIpv6(list: ProxyConfig[]): Promise<boolean> {
+  const probe = async (url: string): Promise<string | null> => {
+    const ctx = await request.newContext({ proxy: list[0], timeout: 20_000 })
+    try {
+      const res = await ctx.get(url, { headers: { accept: 'application/json' } })
+      const j: any = res.status() < 400 ? await res.json().catch(() => null) : null
+      return j && typeof j.ip === 'string' ? j.ip : null
+    } catch { return null } finally { await ctx.dispose().catch(() => {}) }
+  }
+  if (await probe(FALLBACK_TARGET)) return false
+  return ((await probe(FALLBACK_TARGET_V6)) ?? '').includes(':')
+}
+
+/** 2001:db8:1:2::5 → "2001:0db8:0001:0002": the /64 network of an IPv6 address. */
+export function net64(ip: string): string | null {
+  if (!ip.includes(':')) return null
+  const [head, tail = ''] = ip.split('::')
+  const h = head ? head.split(':') : []
+  const t = tail ? tail.split(':') : []
+  const full = ip.includes('::') ? [...h, ...Array(8 - h.length - t.length).fill('0'), ...t] : h
+  return full.length === 8 ? full.slice(0, 4).map(x => x.padStart(4, '0').toLowerCase()).join(':') : null
+}
+
 export async function runTest(list: ProxyConfig[], opts: TestOptions): Promise<TestResult> {
+  const ipv6 = opts.ipv6 ?? await detectIpv6(list)
   if (!list.length) throw new Error('no proxy lines to test')
   const samples = opts.samples ?? (opts.isStatic ? SAMPLES_STATIC : SAMPLES_ROTATING)
 
@@ -143,11 +178,11 @@ export async function runTest(list: ProxyConfig[], opts: TestOptions): Promise<T
     const ctx = await request.newContext({ proxy: list[line], timeout: 20_000 })
     const started = Date.now()
     try {
-      let res = await ctx.get(opts.ipv6 ? MEASURE_TARGET_V6 : MEASURE_TARGET, { headers: { accept: 'application/json' } })
+      let res = await ctx.get(ipv6 ? MEASURE_TARGET_V6 : MEASURE_TARGET, { headers: { accept: 'application/json' } })
       let ms = Date.now() - started
       if (res.status() === 429) {
         const again = Date.now()
-        res = await ctx.get(opts.ipv6 ? FALLBACK_TARGET_V6 : FALLBACK_TARGET, { headers: { accept: 'application/json' } })
+        res = await ctx.get(ipv6 ? FALLBACK_TARGET_V6 : FALLBACK_TARGET, { headers: { accept: 'application/json' } })
         ms = Date.now() - again
       }
       if (res.status() < 400) {
@@ -176,6 +211,8 @@ export async function runTest(list: ProxyConfig[], opts: TestOptions): Promise<T
     latencyP50: percentile(times, 0.5),
     latencyP90: percentile(times, 0.9),
     uniqueIpShare: pct(new Set(ips).size, ok),
+    uniqueNet64Share: ipv6 ? pct(new Set(ips.map(net64).filter(Boolean)).size, ok) : null,
+    ipv6,
     hostingShare: pct(orgs.filter(o => HOSTING.test(o)).length, orgs.length),
     countries: [...countries].sort(),
     extra: null,
@@ -188,7 +225,7 @@ export async function runTest(list: ProxyConfig[], opts: TestOptions): Promise<T
   if (!opts.skipExtra) {
     try {
       const ourIp = await fetch('https://api.ipify.org').then(r => r.text()).catch(() => '')
-      result.extra = await runExtra(list, exits, ourIp.trim(), !!opts.ipv6)
+      result.extra = await runExtra(list, exits, ourIp.trim(), ipv6)
     } catch (e: any) {
       console.log(`[proxytest] extra checks failed: ${String(e?.message ?? e).split('\n')[0]}`)
     }
@@ -207,7 +244,12 @@ async function computeMetrics(r: TestResult, lines: number, opts: TestOptions): 
   if (known >= 10) rows.push(['hosting_share', r.hostingShare, '%'])
   // Rotation is only visible through one gateway. Several lines are pinned
   // sessions or static IPs, where a repeated IP is how the product works.
-  if (lines === 1 && !opts.isStatic) rows.push(['unique_ips', r.uniqueIpShare, '%'])
+  // Over IPv6 a new address every request is cheap — a provider can hand out a
+  // whole /64 to one customer — so rotation there is counted by /64 networks.
+  if (lines === 1 && !opts.isStatic) {
+    if (r.ipv6 && r.uniqueNet64Share !== null) rows.push(['unique_nets64', r.uniqueNet64Share, '%'])
+    else rows.push(['unique_ips', r.uniqueIpShare, '%'])
+  }
 
   const extra = r.extra
   if (extra) {

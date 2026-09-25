@@ -13,6 +13,7 @@ Every number on a review page comes with the raw data of its run (CSV, link unde
 | **response time, open connection** | 3 connections × 10 requests with `curl` on one connection each; `num_connects = 0` proves the connection was reused; the first request of each connection is not counted. Your number for sessions and static IPs. Also reports whether the IP stayed the same within a connection. |
 | **speed** | three 2 MB downloads through the proxy, **transfer time only** (`time_total − time_starttransfer`), connection setup excluded. Median. |
 | **unique IPs** | share of distinct exit IPs among successful requests — rotating gateways only (not for pinned sessions or static IPs). |
+| **unique /64 networks** | the same for IPv6-only exits (`unique_nets64`): distinct /64 networks, because a new IPv6 address inside one /64 is still the same customer line. |
 | **IPs from datacenter networks** | exit network names (ASN, from ipinfo.io) matched against a list of hosting and cloud companies. A **lower bound**: the list is incomplete, so it can understate but not overstate. Meaningful for residential and mobile proxies only. |
 | **abuse blocklists** | exit IPs matched against [FireHOL](https://iplists.firehol.org/) level 1–3. |
 | **IP pool diversity** | distinct /24 subnets and distinct networks (ASN) per run. |
@@ -72,6 +73,7 @@ The methodology version is `METHOD_VERSION` in `src/core.ts` and is stored with 
 | 2026-09-25.2 | every request to ipinfo (was every 4th): countries and datacenter share from all exits, not ~50; latency is now ipinfo's for all requests |
 | 2026-09-25.3 | hosting list: Amazon matched by company name (`Amazon.com`, `Amazon Technologies`, `Amazon Data Services`) — the bare word also caught AMAZONET, a Brazilian home ISP |
 | 2026-09-25.4 | IPv6-only proxies (`--ipv6`): main run and open connection over v6.ipinfo.io / api64.ipify.org; Zillow, Reddit and anonymity skipped — no IPv6 there, so they would read as blocked |
+| 2026-09-25.5 | IPv6-only exits detected by a probe before the run, for any proxy type (not only IPv6 products); rotation over IPv6 is `unique_nets64` — distinct /64 networks, since one customer can get a whole /64 |
 
 ## Using it responsibly
 
