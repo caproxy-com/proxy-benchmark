@@ -59,7 +59,7 @@ A full run uses about 10 MB of proxy traffic (6 MB of it the speed test) and tak
 ## Reading the numbers
 
 - Response times depend on **where you run from**. caproxy.com runs from a server in London; compare numbers between providers measured from the same place, not with other people's tests.
-- Speed is one connection through one exit — for residential proxies that is somebody's home connection. It varies a lot between runs; caproxy.com repeats the test monthly.
+- Speed is one connection through one exit — for residential proxies that is somebody's home connection. It varies a lot between runs; caproxy.com repeats the test every week.
 - In the CSV the last part of every IP is hidden (`203.0.113.x`). Residential proxies exit through real people's connections. Full IPs are only held in memory to match blocklists and never written.
 
 ## Versions
