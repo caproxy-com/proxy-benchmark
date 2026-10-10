@@ -11,7 +11,8 @@ Every number on a review page comes with the raw data of its run (CSV, link unde
 | **success rate** | 200 requests through the proxy (50 for static proxies), each on a **new connection**. A request succeeds if an answer comes back within 20 s. |
 | **response time, new connection** | median and 90th percentile of those requests. This is your number if you need a fresh IP on every request. |
 | **response time, open connection** | 3 connections × 10 requests with `curl` on one connection each; `num_connects = 0` proves the connection was reused; the first request of each connection is not counted. Your number for sessions and static IPs. Also reports whether the IP stayed the same within a connection. |
-| **speed** | three 2 MB downloads through the proxy, **transfer time only** (`time_total − time_starttransfer`), connection setup excluded. Median. |
+| **speed** | ten 2 MB downloads through the proxy, **transfer time only** (`time_total − time_starttransfer`), connection setup excluded. Median. |
+| **control** | `baseline_latency_p50`, `baseline_mbps`: 10 requests to the same target and two 20 MB downloads from speed.cloudflare.com straight from our server, no proxy, before the run and again after it. Not a proxy metric: if the control moves, our side moved, and that night's change isn't the provider's. It can't see the route from the proxy exits to us. |
 | **unique IPs** | share of distinct exit IPs among successful requests — rotating gateways only (not for pinned sessions or static IPs). |
 | **unique /64 networks** | the same for IPv6-only exits (`unique_nets64`): distinct /64 networks, because a new IPv6 address inside one /64 is still the same customer line. |
 | **IPs from datacenter networks** | exit network names (ASN, from ipinfo.io) matched against a list of hosting and cloud companies. A **lower bound**: the list is incomplete, so it can understate but not overstate. Meaningful for residential and mobile proxies only. |
@@ -75,10 +76,11 @@ The methodology version is `METHOD_VERSION` in `src/core.ts` and is stored with 
 | 2026-09-25.3 | hosting list: Amazon matched by company name (`Amazon.com`, `Amazon Technologies`, `Amazon Data Services`) — the bare word also caught AMAZONET, a Brazilian home ISP |
 | 2026-09-25.4 | IPv6-only proxies (`--ipv6`): main run and open connection over v6.ipinfo.io / api64.ipify.org; Zillow, Reddit and anonymity skipped — no IPv6 there, so they would read as blocked |
 | 2026-09-25.5 | IPv6-only exits detected by a probe before the run, for any proxy type (not only IPv6 products); rotation over IPv6 is `unique_nets64` — distinct /64 networks, since one customer can get a whole /64 |
+| 2026-10-10 | speed is the median of 10 downloads, not 3 (one slow download used to decide it); control requests without a proxy before and after every run (`baseline_latency_p50`, `baseline_mbps`) |
 
 ## Using it responsibly
 
-The test sends a handful of requests to public sites (a few per run to Zillow and Reddit, more to ipinfo.io, api.ipify.org and httpbin.org) and downloads 6 MB from caproxy.com for the speed test. Keep it at that scale and respect those sites' terms. Only test proxies you are allowed to use.
+The test sends a handful of requests to public sites (a few per run to Zillow and Reddit, more to ipinfo.io, api.ipify.org and httpbin.org) and downloads 20 MB from caproxy.com for the speed test, plus 80 MB from speed.cloudflare.com without a proxy for the control. Keep it at that scale and respect those sites' terms. Only test proxies you are allowed to use.
 
 ## Disagree with a result?
 

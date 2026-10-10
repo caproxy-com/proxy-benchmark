@@ -20,19 +20,23 @@ import type { ProxyConfig } from './proxy.js'
  *               Craigslist (lets everyone in), Instagram, Cloudflare.
  *   anonymity — does the proxy add headers that reveal it or our IP (httpbin
  *               over plain HTTP: inside TLS a proxy can't see or add headers).
- *   speed     — three 2 MB downloads, transfer time only (see speed()).
+ *   speed     — ten 2 MB downloads, transfer time only (see speed()).
  *   latency   — on an already open connection (see warmConn()).
  *   lists     — how many exit IPs are on FireHOL level 1-3 public abuse lists.
  *   pool      — how many distinct /24 subnets and networks (ASN) per run.
  *
- * About 10 MB of traffic in total, 6 MB of it the speed test.
+ * About 24 MB of traffic in total, 20 MB of it the speed test.
  */
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
 const HEADERS = { 'user-agent': UA, 'accept-language': 'en-US,en;q=0.9', accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
 const SITE_TRIES = 8
 const SPEED_URL = 'https://caproxy.com/1/test-data/2mb.bin'
-const SPEED_TRIES = 3
+/**
+ * Ten, not three (until 2026-10-10): the median of three swung 3.7 → 0.3 Mbit/s
+ * between two runs of the same proxy — one slow download decided the result.
+ */
+const SPEED_TRIES = 10
 
 export interface SiteTry { ok: boolean; why: string; ms: number | null }
 export interface Extra {
@@ -112,12 +116,12 @@ async function anonymity(proxy: ProxyConfig, ourIp: string): Promise<{ level: Ex
  * setup and the result measured latency, not bandwidth. 2 MB because TCP has not
  * ramped up yet on 1 MB.
  */
-function speed(proxy: ProxyConfig): Promise<number | null> {
+export function speed(proxy: ProxyConfig | null, url = SPEED_URL): Promise<number | null> {
   const args = ['-s', '-o', '/dev/null', '--max-time', '60',
-    '-w', '%{http_code} %{size_download} %{time_starttransfer} %{time_total}',
-    '--proxy', proxy.server.replace(/^socks5:/, 'socks5h:')]
-  if (proxy.username) args.push('--proxy-user', `${proxy.username}:${proxy.password ?? ''}`)
-  args.push(`${SPEED_URL}?r=${Math.random().toString(36).slice(2)}`)
+    '-w', '%{http_code} %{size_download} %{time_starttransfer} %{time_total}']
+  if (proxy) args.push('--proxy', proxy.server.replace(/^socks5:/, 'socks5h:'))
+  if (proxy?.username) args.push('--proxy-user', `${proxy.username}:${proxy.password ?? ''}`)
+  args.push(`${url}${url.includes('?') ? '&' : '?'}r=${Math.random().toString(36).slice(2)}`)
   return new Promise(resolve => {
     execFile('curl', args, { timeout: 70_000 }, (_err, stdout) => {
       const [code, size, ttfb, total] = String(stdout ?? '').trim().split(' ').map(Number)

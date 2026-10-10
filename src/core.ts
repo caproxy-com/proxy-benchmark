@@ -1,6 +1,6 @@
 import { request } from 'playwright'
 import type { ProxyConfig } from './proxy.js'
-import { runExtra, type Extra } from './extra.js'
+import { runExtra, speed, type Extra } from './extra.js'
 
 /**
  * caproxy proxy benchmark — the exact code caproxy.com runs for the "Our Test" section
@@ -13,7 +13,7 @@ import { runExtra, type Extra } from './extra.js'
  */
 
 /** Methodology version. Changes whenever what or how we measure changes. */
-export const METHOD_VERSION = '2026-09-25.5'
+export const METHOD_VERSION = '2026-10-10'
 
 /** Answers with exit IP, country and network (ASN) in one request. */
 export const MEASURE_TARGET = 'https://ipinfo.io/json'
@@ -44,6 +44,48 @@ export const FALLBACK_TARGET_V6 = 'https://api64.ipify.org/?format=json'
  */
 export const SAMPLES_ROTATING = 200
 export const SAMPLES_STATIC = 50
+
+/**
+ * Control run: the same kind of requests straight from our server, no proxy, once
+ * before the run and once after it. Every number of the run includes our own
+ * server and its network; if the control moves, so did we, and the provider's
+ * change that night is not the provider's. 10 requests to the main target and
+ * 2 downloads each time. The download is a third-party file: the speed test file
+ * lives on caproxy.com itself, and fetching it from here wouldn't leave the box.
+ * What the control can't see is the route from the proxy exits to us — that takes
+ * a second vantage point.
+ */
+export const BASELINE_REQUESTS = 10
+export const BASELINE_DOWNLOADS = 2
+export const BASELINE_SPEED_URL = 'https://speed.cloudflare.com/__down?bytes=20000000'
+
+export interface Baseline { ms: Array<number | null>; mbps: Array<number | null> }
+
+async function baseline(ipv6: boolean): Promise<Baseline> {
+  const ms: Array<number | null> = []
+  for (let i = 0; i < BASELINE_REQUESTS; i++) {
+    const ctx = await request.newContext({ timeout: 20_000 })
+    const started = Date.now()
+    try {
+      let res = await ctx.get(ipv6 ? MEASURE_TARGET_V6 : MEASURE_TARGET, { headers: { accept: 'application/json' } })
+      let t = Date.now() - started
+      if (res.status() === 429) {
+        const again = Date.now()
+        res = await ctx.get(ipv6 ? FALLBACK_TARGET_V6 : FALLBACK_TARGET, { headers: { accept: 'application/json' } })
+        t = Date.now() - again
+      }
+      ms.push(res.status() < 400 ? t : null)
+    } catch { ms.push(null) } finally { await ctx.dispose().catch(() => {}) }
+  }
+  const mbps: Array<number | null> = []
+  for (let i = 0; i < BASELINE_DOWNLOADS; i++) mbps.push(await speed(null, BASELINE_SPEED_URL))
+  return { ms, mbps }
+}
+
+const median = (xs: Array<number | null>): number | null => {
+  const v = xs.filter((x): x is number => x !== null).sort((a, b) => a - b)
+  return v.length ? v[Math.floor((v.length - 1) / 2)] : null
+}
 
 /**
  * Hosting and cloud networks. An address from one of these on a "residential"
@@ -127,6 +169,8 @@ export interface TestResult {
   hostingShare: number
   countries: string[]
   extra: Extra | null
+  /** Control requests without a proxy, before and after the run (see BASELINE_REQUESTS). */
+  baseline: Baseline | null
   /** All metrics as [kind, value, unit], the same rows caproxy.com stores. */
   metrics: Metric[]
 }
@@ -172,6 +216,7 @@ export async function runTest(list: ProxyConfig[], opts: TestOptions): Promise<T
   let lastError = ''
   const log: LogRow[] = []
   const exits: TestResult['exits'] = []
+  const before = await baseline(ipv6)
 
   for (let i = 0; i < samples; i++) {
     const line = i % list.length
@@ -216,6 +261,7 @@ export async function runTest(list: ProxyConfig[], opts: TestOptions): Promise<T
     hostingShare: pct(orgs.filter(o => HOSTING.test(o)).length, orgs.length),
     countries: [...countries].sort(),
     extra: null,
+    baseline: null,
     metrics: [],
   }
   // Nothing answered: most likely the access is dead, not the provider. No
@@ -230,6 +276,8 @@ export async function runTest(list: ProxyConfig[], opts: TestOptions): Promise<T
       console.log(`[proxytest] extra checks failed: ${String(e?.message ?? e).split('\n')[0]}`)
     }
   }
+  const after = await baseline(ipv6)
+  result.baseline = { ms: [...before.ms, ...after.ms], mbps: [...before.mbps, ...after.mbps] }
   result.metrics = await computeMetrics(result, list.length, opts)
   return result
 }
@@ -282,6 +330,11 @@ async function computeMetrics(r: TestResult, lines: number, opts: TestOptions): 
     if (extra.subnets24) rows.push(['subnets_24', extra.subnets24, 'count'])
     if (extra.asns) rows.push(['asn_count', extra.asns, 'count'])
   }
+  // Our own side, not the proxy's: stored next to the run, never shown as a provider metric.
+  const bMs = r.baseline ? median(r.baseline.ms) : null
+  const bMbps = r.baseline ? median(r.baseline.mbps) : null
+  if (bMs !== null) rows.push(['baseline_latency_p50', bMs, 'ms'])
+  if (bMbps !== null) rows.push(['baseline_mbps', bMbps, 'Mbit/s'])
   if (opts.countryClaim && r.exits.length) {
     const claim = opts.countryClaim.toUpperCase()
     rows.push(['geo_match', pct(r.exits.filter(x => (x.cc ?? '').toUpperCase() === claim).length, r.exits.length), '%'])

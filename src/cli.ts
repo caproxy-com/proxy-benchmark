@@ -64,6 +64,10 @@ export function toCsv(r: TestResult): string {
     row('FireHOL blocklists', '', `${e.blocklisted} of ${e.checkedIps} IPs listed`, '', 'firehol_level1-3')
     row('pool', '', `${e.subnets24} /24 subnets, ${e.asns} ASNs`, '', '')
   }
+  if (r.baseline) {
+    r.baseline.ms.forEach((v, i) => row('control: no proxy, request', i + 1, v === null ? 'fail' : 'ok', v, ''))
+    r.baseline.mbps.forEach((v, i) => row('control: no proxy, download 20 MB', i + 1, v === null ? 'fail' : 'ok', '', v === null ? '' : `${v} Mbit/s`))
+  }
   return out.join('\n') + '\n'
 }
 
